@@ -56,8 +56,16 @@ export default function DietsPage() {
 
       if (error) throw error;
 
-      const userDiets = data.map(item => item.diets).filter(Boolean);
-      setDiets(userDiets);
+     // Normalizando os dados vindos do Supabase
+const normalized = data.map(item => ({
+  id: item.id,
+  name: item.name,
+  description: item.description,
+  goal: item.goal,
+  created_at: item.created_at,
+}));
+
+setDiets(normalized);
     } catch (error) {
       console.error('Erro ao buscar dietas:', error);
     } finally {
