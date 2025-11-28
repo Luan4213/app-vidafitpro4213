@@ -83,7 +83,18 @@ export default function DietDetailPage() {
         .eq('diet_id', dietId);
 
       if (foodsError) throw foodsError;
-      setDietFoods(foodsData || []);
+      // Normalizar os dados da dieta para o formato esperado pelo componente
+const normalizedFoods = (foodsData || []).map((item: any) => ({
+  id: item.foods?.id,
+  name: item.foods?.name,
+  calories_per_100g: item.foods?.calories_per_100g,
+  protein: item.foods?.protein,
+  carbs: item.foods?.carbs,
+  fat: item.foods?.fat,
+  quantity_grams: item.quantity_grams,
+}));
+
+setDietFoods(normalizedFoods);
     } catch (error) {
       console.error('Erro ao buscar detalhes da dieta:', error);
     } finally {
