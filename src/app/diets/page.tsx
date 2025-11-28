@@ -12,6 +12,18 @@ interface Diet {
   created_at: string;
 }
 
+/**
+ * Tipagem do row que vem do select:
+ * quando você faz:
+ * .from('user_diets').select(diet_id, diets ( id, name, ... ))
+ *
+ * cada item tem a forma { diet_id: string, diets: Diet | null }
+ */
+type UserDietRow = {
+  diet_id: string | number;
+  diets?: Diet | null;
+};
+
 export default function DietsPage() {
   const [diets, setDiets] = useState<Diet[]>([]);
   const [loading, setLoading] = useState(true);
@@ -20,27 +32,40 @@ export default function DietsPage() {
   useEffect(() => {
     fetchUserDiets();
     checkSubscription();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const checkSubscription = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
-      const { data } = await supabase
-        .from('user_details')
-        .select('is_subscribed')
-        .eq('user_id', user.id)
-        .single();
-      setIsSubscribed(data?.is_subscribed || false);
+    try {
+      const userResult = await supabase.auth.getUser();
+      const user = (userResult && (userResult as any).data?.user) || null;
+      if (user) {
+        const { data } = await supabase
+          .from('user_details')
+          .select('is_subscribed')
+          .eq('user_id', user.id)
+          .single();
+        setIsSubscribed(Boolean(data?.is_subscribed));
+      }
+    } catch (err) {
+      console.error('Erro ao checar assinatura:', err);
     }
   };
 
   const fetchUserDiets = async () => {
+    setLoading(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      // pega user
+      const userResult = await supabase.auth.getUser();
+      const user = (userResult && (userResult as any).data?.user) || null;
+      if (!user) {
+        setDiets([]);
+        return;
+      }
 
+      // busca user_diets com nested diets
       const { data, error } = await supabase
-        .from('user_diets')
+        .from<UserDietRow>('user_diets')
         .select(`
           diet_id,
           diets (
@@ -56,18 +81,35 @@ export default function DietsPage() {
 
       if (error) throw error;
 
-     // Normalizando os dados vindos do Supabase
-const normalized = data.map(item => ({
-  id: item.id,
-  name: item.name,
-  description: item.description,
-  goal: item.goal,
-  created_at: item.created_at,
-}));
+      if (!Array.isArray(data) || data.length === 0) {
+        setDiets([]);
+        return;
+      }
 
-setDiets(normalized);
+      // Normalizar: extrair diets de cada row (pode ser null)
+      const normalized: Diet[] = data
+        .map((item) => {
+          // quando o relacionamento veio preenchido em diets
+          if (item.diets && typeof item.diets === 'object') {
+            // garantir que os campos existam e sejam strings
+            const d = item.diets as Diet;
+            return {
+              id: String(d.id),
+              name: String(d.name ?? ''),
+              description: String(d.description ?? ''),
+              goal: String(d.goal ?? ''),
+              created_at: String(d.created_at ?? ''),
+            } as Diet;
+          }
+          // fallback: se não tiver diets, ignoramos
+          return null;
+        })
+        .filter((x): x is Diet => x !== null); // filtra nulls e mantém tipo Diet[]
+
+      setDiets(normalized);
     } catch (error) {
       console.error('Erro ao buscar dietas:', error);
+      setDiets([]);
     } finally {
       setLoading(false);
     }
@@ -150,7 +192,7 @@ setDiets(normalized);
                     Objetivo: {diet.goal.replace('_', ' ')}
                   </span>
                   <Link
-                    href={`/diets/${diet.id}`}
+                    href={/diets/${diet.id}}
                     className="text-blue-600 hover:text-blue-800"
                   >
                     Ver Detalhes
