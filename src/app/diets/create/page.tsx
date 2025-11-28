@@ -2,32 +2,62 @@
 
 import { useState } from 'react'
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
+import type { PostgrestError } from '@supabase/supabase-js'
+
+type FoodRow = {
+  id: number
+  name?: string
+  calories_per_100g?: number
+  // adicione aqui outras propriedades que você usa
+}
+
+type MealFood = {
+  food_id: number
+  quantity: number
+}
+
+type Meal = {
+  id: number | string
+  nome: string
+  Alimentos: MealFood[]
+}
 
 export default function CreateDietPage() {
   const supabase = createClientComponentClient()
 
   const handleCreateDiet = async () => {
     try {
-      // Buscar alimentos
-      const { data: alimentos } = await supabase
-        .from('Alimentos')
+      // Buscar alimentos (até 50)
+      const { data: alimentos, error } = await supabase
+        .from<FoodRow>('Alimentos')
         .select('*')
         .limit(50)
 
-      // Caso não haja alimentos
-      if (!alimentos) return
+      if (error) {
+        console.error('Erro ao buscar alimentos:', error)
+        alert('Erro ao buscar alimentos')
+        return
+      }
 
-      // Gerar refeições
+      // Caso não haja alimentos
+      if (!alimentos || alimentos.length === 0) {
+        alert('Nenhum alimento encontrado')
+        return
+      }
+
+      // Gerar refeições (sua função)
       const refeicoes = generateMeals(2000, 'perder', alimentos)
 
-      // Salvar cada refeição no banco
-      for (let r = 0; r < refeicoes.length; r++) {
-        const refeicao = refeicoes[r]
+      // Preparar todos os inserts em lote por refeição
+      // Vamos agrupar todos os registros de diet_foods e inserir em uma chamada
+      const inserts: Array<Record<string, any>> = []
 
-        for (let a = 0; a < refeicao.Alimentos.length; a++) {
-          const alimento = refeicao.Alimentos[a]
+      for (const refeicao of refeicoes) {
+        // se não existir Alimentos nessa refeição, pula
+        if (!Array.isArray(refeicao.Alimentos) || refeicao.Alimentos.length === 0) continue
 
-          await supabase.from('diet_foods').insert({
+        for (const alimento of refeicao.Alimentos) {
+          inserts.push({
             diet_id: refeicao.id,
             food_id: alimento.food_id,
             quantity_grams: alimento.quantity,
@@ -37,9 +67,26 @@ export default function CreateDietPage() {
         }
       }
 
+      if (inserts.length === 0) {
+        alert('Nenhuma refeição gerada para salvar')
+        return
+      }
+
+      // Inserir em lote
+      const { data: insertData, error: insertError } = await supabase
+        .from('diet_foods')
+        .insert(inserts)
+
+      if (insertError) {
+        console.error('Erro ao inserir diet_foods:', insertError)
+        alert('Erro ao salvar dieta')
+        return
+      }
+
       alert('Dieta criada com sucesso!')
-    } catch (error) {
-      console.error(error)
+    } catch (err) {
+      const e = err as Error | PostgrestError
+      console.error('Erro inesperado ao criar dieta:', e)
       alert('Erro ao criar dieta')
     }
   }
@@ -64,8 +111,8 @@ export default function CreateDietPage() {
   )
 }
 
-// Função fake — substitua pela sua
-function generateMeals(calorias: number, objetivo: string, alimentos: any[]) {
+// Função fake — substitua pela sua implementação real de geração
+function generateMeals(calorias: number, objetivo: string, alimentos: FoodRow[]): Meal[] {
   return [
     {
       id: 1,
